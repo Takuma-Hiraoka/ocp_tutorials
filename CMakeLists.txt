@@ -8,6 +8,7 @@ find_package(catkin REQUIRED COMPONENTS
   roscpp)
 
 find_package(pinocchio REQUIRED)
+find_package(crocoddyl REQUIRED)
 
 include_directories(
   ${catkin_INCLUDE_DIRS})
@@ -20,6 +21,11 @@ catkin_package(
 )
 
 add_executable(viewer_test src/viewer_test.cpp)
+add_executable(whole_body_manipulation src/whole_body_manipulation.cpp)
 target_link_libraries(viewer_test
   ${catkin_LIBRARIES}
   pinocchio::pinocchio)
+target_link_libraries(whole_body_manipulation
+  ${catkin_LIBRARIES}
+  pinocchio::pinocchio
+  crocoddyl::crocoddyl)
