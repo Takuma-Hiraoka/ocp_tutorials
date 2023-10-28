@@ -18,6 +18,7 @@
 #include "crocoddyl/multibody/friction-cone.hpp"
 #include "crocoddyl/multibody/residuals/contact-friction-cone.hpp"
 #include "crocoddyl/core/integrator/euler.hpp"
+#include "crocoddyl/core/solvers/fddp.hpp"
 #include <ros/ros.h>
 #include <sensor_msgs/JointState.h>
 #include <string>
@@ -187,19 +188,33 @@ int main(int argc, char** argv)
     }
   std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract> > seqs = createSequence(dmodels, dt, N);
 
-  ros::Rate loop_rate(10);
+  boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = seqs.back();
+  seqs.pop_back();
+  boost::shared_ptr<crocoddyl::ShootingProblem> problem =
+    boost::make_shared<crocoddyl::ShootingProblem>(x0, seqs,terminal);
+  crocoddyl::SolverFDDP fddp(problem);
+  
+  std::cerr << "Problem solved: " << fddp.solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, 200, false, 1e-9) << std::endl;
+  std::cerr << "Number of iterations: " << fddp.get_iter() << std::endl;
+  std::cerr << "Total cost: " << fddp.get_cost() << std::endl;
+  std::cerr << "Gradient norm: " << fddp.get_stop() << std::endl;
+  std::vector<Eigen::VectorXd> xs = fddp.get_xs();
+  std::vector<Eigen::VectorXd> us = fddp.get_us();
+
+  ros::Rate loop_rate(1.0 / dt);
   int count = 0;
   while (ros::ok())
   {
+    Eigen::VectorXd q = xs[count];
     sensor_msgs::JointState js;
     js.header.stamp = ros::Time::now();
     for(pinocchio::JointIndex joint_id = 2; joint_id < (pinocchio::JointIndex)model->njoints; ++joint_id) // world と root
       {
         js.name.push_back(model->names[joint_id]);
-        js.position.push_back(q0[7 - 2 + joint_id]);
+        js.position.push_back(q[7 - 2 + joint_id]);
       }
     joint_pub.publish(js);
-    count++;
+    if (count < xs.size()-1) count++;
 
     ros::spinOnce();
     loop_rate.sleep();
