@@ -82,7 +82,7 @@ boost::shared_ptr<crocoddyl::DifferentialActionModelContactFwdDynamics> createAc
   boost::shared_ptr<crocoddyl::ActivationModelAbstract> activation_xbounds =
     boost::make_shared<
           crocoddyl::ActivationModelQuadraticBarrier>(
-                                                              crocoddyl::ActivationBounds(state->get_lb(), state->get_ub()));
+                                                      crocoddyl::ActivationBounds(state->get_lb().tail(2*model->nv), state->get_ub().tail(2*model->nv))); // 浮遊リンク自由度をクオータニオンで表すため？にget_lbではルートリンク回転自由度分が4自由度分になる。がResidualModelStateのコンストラクタではnu*2の自由度が作られるので、nrが一致せずエラーとなる。どうせ浮遊リンク自由度には拘束がない(inf)なので、一つ飛ばす。
   boost::shared_ptr<crocoddyl::CostModelAbstract> x_bounds =
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, activation_xbounds,
@@ -159,7 +159,7 @@ int main(int argc, char** argv)
 
   // Declaring the foot and hand names
   std::string rf_name = "RLEG_LINK5";
-  std::string lf_name = "lLEG_LINK5";
+  std::string lf_name = "LLEG_LINK5";
   std::string lh_name = "HANDBASE_L";
 
   // Getting the frame ids
