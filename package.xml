@@ -12,5 +12,6 @@
   <depend>roscpp</depend>
   <depend>pinocchio</depend>
   <depend>crocoddyl</depend>
+  <depend>tf</depend>
 
 </package>

@@ -3,4 +3,7 @@
   <param name="robot_description" textfile="$(arg URDF_FILE)" />
   <param name="robot_model_file" value="$(arg URDF_FILE)" />
   <node pkg="robot_state_publisher" type="robot_state_publisher" name="robot_state_publisher" />
+
+  <node pkg="rviz" type="rviz" name="rviz_viewer"
+        args="-d $(find ocp_tutorials)/config/config.rviz"/>
 </launch>

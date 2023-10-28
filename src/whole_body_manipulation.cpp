@@ -20,6 +20,7 @@
 #include "crocoddyl/core/integrator/euler.hpp"
 #include "crocoddyl/core/solvers/fddp.hpp"
 #include <ros/ros.h>
+#include <tf/transform_broadcaster.h>
 #include <sensor_msgs/JointState.h>
 #include <string>
 #include <math.h>
@@ -139,6 +140,7 @@ int main(int argc, char** argv)
   ros::init(argc, argv, "whole_body_manipulation");
   ros::NodeHandle nh;
   ros::Publisher joint_pub = nh.advertise<sensor_msgs::JointState>("joint_states", 10);
+  tf::TransformBroadcaster robot_base_broadcaster;
 
   // Load robot
   std::string fileName;
@@ -206,6 +208,21 @@ int main(int argc, char** argv)
   while (ros::ok())
   {
     Eigen::VectorXd q = xs[count];
+    // base
+    geometry_msgs::TransformStamped baseState;
+    baseState.header.stamp = ros::Time::now();
+    baseState.header.frame_id = "world";
+    baseState.child_frame_id  = "BODY";
+    baseState.transform.translation.x = q[0];
+    baseState.transform.translation.y = q[1];
+    baseState.transform.translation.z = q[2];
+    baseState.transform.rotation.x = q[3];
+    baseState.transform.rotation.y = q[4];
+    baseState.transform.rotation.z = q[5];
+    baseState.transform.rotation.w = q[6];
+    robot_base_broadcaster.sendTransform(baseState);
+
+    // joint angle
     sensor_msgs::JointState js;
     js.header.stamp = ros::Time::now();
     for(pinocchio::JointIndex joint_id = 2; joint_id < (pinocchio::JointIndex)model->njoints; ++joint_id) // world と root
