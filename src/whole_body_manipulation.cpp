@@ -19,6 +19,7 @@
 #include "crocoddyl/multibody/residuals/contact-friction-cone.hpp"
 #include "crocoddyl/core/integrator/euler.hpp"
 #include "crocoddyl/core/solvers/fddp.hpp"
+#include "crocoddyl/core/utils/timer.hpp"
 #include <ros/ros.h>
 #include <tf/transform_broadcaster.h>
 #include <sensor_msgs/JointState.h>
@@ -178,10 +179,10 @@ int main(int argc, char** argv)
   double dt = 5e-2;
   int N = 20;
   std::vector<Eigen::Vector3d> targets;
-  targets.push_back(Eigen::Vector3d(0.4,0.1,1.2));
-  targets.push_back(Eigen::Vector3d(0.6,0.1,1.2));
-  targets.push_back(Eigen::Vector3d(0.6,-0.1,1.2));
-  targets.push_back(Eigen::Vector3d(0.4,-0.1,1.2));
+  targets.push_back(Eigen::Vector3d(0.6,0.1,1.4));
+  // targets.push_back(Eigen::Vector3d(0.8,0.1,1.4));
+  // targets.push_back(Eigen::Vector3d(0.8,-0.1,1.4));
+  // targets.push_back(Eigen::Vector3d(0.6,-0.1,1.4));
 
   std::vector<boost::shared_ptr<crocoddyl::DifferentialActionModelAbstract> > dmodels;
   for(int i=0; i<targets.size(); i++)
@@ -195,9 +196,13 @@ int main(int argc, char** argv)
   boost::shared_ptr<crocoddyl::ShootingProblem> problem =
     boost::make_shared<crocoddyl::ShootingProblem>(x0, seqs,terminal);
   crocoddyl::SolverFDDP fddp(problem);
-  
+
+  crocoddyl::Timer timer;
   std::cerr << "Problem solved: " << fddp.solve(crocoddyl::DEFAULT_VECTOR, crocoddyl::DEFAULT_VECTOR, 200, false, 1e-9) << std::endl;
+  double time = timer.get_duration();
+  std::cerr << "total calculation time:" << time << std::endl;
   std::cerr << "Number of iterations: " << fddp.get_iter() << std::endl;
+  std::cerr << "time per iterate:" << time / fddp.get_iter() << std::endl;
   std::cerr << "Total cost: " << fddp.get_cost() << std::endl;
   std::cerr << "Gradient norm: " << fddp.get_stop() << std::endl;
   std::vector<Eigen::VectorXd> xs = fddp.get_xs();
