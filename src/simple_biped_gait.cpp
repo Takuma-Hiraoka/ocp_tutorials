@@ -30,9 +30,9 @@
 #include <string>
 #include <math.h>
 
-class SimpleBipedGaitProbrem {
+class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProbrem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_) : model(model_), q0(q0_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_) : model(model_), q0(q0_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -55,24 +55,32 @@ public:
     Eigen::Vector3d comRef = (rfPos0 + lfPos0) / 2;
     comRef[2] = pinocchio::centerOfMass(*model, data, q0)[2];
 
+    std::vector<pinocchio::FrameIndex> lf_ids;
+    lf_ids.push_back(lf_id);
+    std::vector<pinocchio::FrameIndex> rf_ids;
+    rf_ids.push_back(rf_id);
+    
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> loco3dModel;
 
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
     if (firstStep) {
-      rStep = this->createFootStepModels(comRef, rfPos0s, 0.5 * stepLength, stepHeight, timeStep, stepKnots, std::vector<pinocchio::FrameIndex>(lf_id), std::vector<pinocchio::FrameIndex>(rf_id));
+      rStep = this->createFootStepModels(comRef, rfPos0s, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
       firstStep = false;
     } else {
-      rStep = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, std::vector<pinocchio::FrameIndex>(lf_id), std::vector<pinocchio::FrameIndex>(rf_id));
+      rStep = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
     }
-    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, std::vector<pinocchio::FrameIndex>(rf_id), std::vector<pinocchio::FrameIndex>(lf_id));
+    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
     // We defined the problem as:
+    std::vector<pinocchio::FrameIndex> rf_lf_ids;
+    rf_lf_ids.push_back(rf_id);
+    rf_lf_ids.push_back(lf_id);
     for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, std::vector<pinocchio::FrameIndex>(rf_id, lf_id), Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
     }
     loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
     for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, std::vector<pinocchio::FrameIndex>(rf_id, lf_id), Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
     }
     loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
     boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = loco3dModel.back();
@@ -296,10 +304,35 @@ int main(int argc, char** argv)
     0.000128, -0.002474, -0.488908, 1.01524, -0.526335, 0.002474; // rleg
   Eigen::VectorXd x0(model->nq + model->nv);
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
+  
 
-  std::vector<Eigen::VectorXd> xs;
-  xs.push_back(x0);
-  ros::Rate loop_rate(10.0);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0);
+  crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
+                                                         x0,
+                                                         0.6, // stepLength
+                                                         0.1, // stepHeight
+                                                         0.03, // timeStep
+                                                         35, // stepKnots
+                                                         10 // supportKnots
+                                                         ));
+  solver.set_th_stop(1e-7);
+  std::vector<Eigen::VectorXd> xs_init;
+  for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
+  std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
+  xs_init.push_back(x0);
+
+  crocoddyl::Timer timer;
+  std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, 100, false) << std::endl;
+  double time = timer.get_duration();
+  std::cerr << "total calculation time:" << time << std::endl;
+  std::cerr << "Number of iterations: " << solver.get_iter() << std::endl;
+  std::cerr << "time per iterate:" << time / solver.get_iter() << std::endl;
+  std::cerr << "Total cost: " << solver.get_cost() << std::endl;
+  std::cerr << "Gradient norm: " << solver.get_stop() << std::endl;
+  std::vector<Eigen::VectorXd> xs = solver.get_xs();
+  std::vector<Eigen::VectorXd> us = solver.get_us();
+
+  ros::Rate loop_rate(1.0 / 0.03);
   int count = 0;
   while (ros::ok())
   {
