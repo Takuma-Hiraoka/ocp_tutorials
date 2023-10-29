@@ -59,8 +59,16 @@ public:
     lf_ids.push_back(lf_id);
     std::vector<pinocchio::FrameIndex> rf_ids;
     rf_ids.push_back(rf_id);
-    
+
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> loco3dModel;
+
+    // We defined the problem as:
+    std::vector<pinocchio::FrameIndex> rf_lf_ids;
+    rf_lf_ids.push_back(rf_id);
+    rf_lf_ids.push_back(lf_id);
+    for (int i=0;i<supportKnots; i++) {
+      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+    }
 
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
     if (firstStep) {
@@ -69,19 +77,15 @@ public:
     } else {
       rStep = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
     }
+
+    loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
+
+    for (int i=0;i<supportKnots; i++) {
+      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+    }
+
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
-    // We defined the problem as:
-    std::vector<pinocchio::FrameIndex> rf_lf_ids;
-    rf_lf_ids.push_back(rf_id);
-    rf_lf_ids.push_back(lf_id);
-    for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    }
-    loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
-    for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, Eigen::Vector3d::Zero(), std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    }
     loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
     boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = loco3dModel.back();
     loco3dModel.pop_back();
