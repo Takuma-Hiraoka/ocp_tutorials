@@ -1,0 +1,11 @@
+<launch>
+  <node name="simple_biped_gait"   pkg="ocp_tutorials" type="simple_biped_gait" >
+    <param name="stepLength" value="0.6"/>
+    <param name="stepHeight" value="0.1"/>
+    <param name="timeStep" value="0.03"/>
+    <param name="stepKnots" value="35"/>
+    <param name="supportKnots" value="10"/>
+    <param name="viewer_ratio" value="10"/>
+    <param name="num_iter" value="1000"/>
+  </node>
+</launch>

@@ -87,6 +87,7 @@ public:
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
     loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
+
     boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = loco3dModel.back();
     loco3dModel.pop_back();
 
@@ -288,8 +289,23 @@ int main(int argc, char** argv)
 {
   ros::init(argc, argv, "simple_biped_gait");
   ros::NodeHandle nh;
+  ros::NodeHandle pnh("~");
   ros::Publisher joint_pub = nh.advertise<sensor_msgs::JointState>("joint_states", 10);
   tf::TransformBroadcaster robot_base_broadcaster;
+  double stepLength = 0.6;
+  double stepHeight = 0.1;
+  double timeStep = 0.03;
+  int stepKnots = 35;
+  int supportKnots = 10;
+  double viewer_ratio = 1.0;
+  int num_iter = 100;
+  pnh.getParam("stepLength", stepLength);
+  pnh.getParam("stepHeight", stepHeight);
+  pnh.getParam("timeStep", timeStep);
+  pnh.getParam("stepKnots", stepKnots);
+  pnh.getParam("supportKnots", supportKnots);
+  pnh.getParam("viewer_ratio", viewer_ratio);
+  pnh.getParam("num_iter", num_iter);
 
   // Load robot
   std::string fileName;
@@ -313,11 +329,11 @@ int main(int argc, char** argv)
   SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0);
   crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                          x0,
-                                                         0.6, // stepLength
-                                                         0.1, // stepHeight
-                                                         0.03, // timeStep
-                                                         35, // stepKnots
-                                                         10 // supportKnots
+                                                         stepLength,
+                                                         stepHeight,
+                                                         timeStep,
+                                                         stepKnots,
+                                                         supportKnots
                                                          ));
   solver.set_th_stop(1e-7);
   std::vector<Eigen::VectorXd> xs_init;
@@ -326,7 +342,7 @@ int main(int argc, char** argv)
   xs_init.push_back(x0);
 
   crocoddyl::Timer timer;
-  std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, 100, false) << std::endl;
+  std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, num_iter, false) << std::endl;
   double time = timer.get_duration();
   std::cerr << "total calculation time:" << time << std::endl;
   std::cerr << "Number of iterations: " << solver.get_iter() << std::endl;
@@ -336,7 +352,7 @@ int main(int argc, char** argv)
   std::vector<Eigen::VectorXd> xs = solver.get_xs();
   std::vector<Eigen::VectorXd> us = solver.get_us();
 
-  ros::Rate loop_rate(1.0 / 0.03);
+  ros::Rate loop_rate(1.0 / timeStep / viewer_ratio);
   int count = 0;
   while (ros::ok())
   {
