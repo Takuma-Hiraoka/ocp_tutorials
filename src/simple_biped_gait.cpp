@@ -47,11 +47,10 @@ public:
     pinocchio::forwardKinematics(*model,data,q0);
     pinocchio::updateFramePlacements(*model,data);
     Eigen::Vector3d rfPos0 = data.oMf[rf_id].translation();
-    std::vector<Eigen::Vector3d> rfPos0s;
-    rfPos0s.push_back(rfPos0);
     Eigen::Vector3d lfPos0 = data.oMf[lf_id].translation();
-    std::vector<Eigen::Vector3d> lfPos0s;
-    lfPos0s.push_back(lfPos0);
+    std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> footPos0;
+    footPos0.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(rf_id, rfPos0));
+    footPos0.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(lf_id, lfPos0));
     Eigen::Vector3d comRef = (rfPos0 + lfPos0) / 2;
     comRef[2] = pinocchio::centerOfMass(*model, data, q0)[2];
 
@@ -67,26 +66,42 @@ public:
     rf_lf_ids.push_back(rf_id);
     rf_lf_ids.push_back(lf_id);
     for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
     }
 
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
     if (firstStep) {
-      rStep = this->createFootStepModels(comRef, rfPos0s, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+      rStep = this->createFootStepModels(comRef, footPos0, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
       firstStep = false;
     } else {
-      rStep = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+      rStep = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
     }
 
     loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
 
-    for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    }
+    // for (int i=0;i<supportKnots; i++) {
+    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+    // }
 
-    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
+    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
-    loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
+    // loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
+
+    // for (int i=0;i<supportKnots; i++) {
+    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+    // }
+
+    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep2 = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+
+    // loco3dModel.insert(loco3dModel.end(), rStep2.begin(), rStep2.end());
+
+    // for (int i=0;i<supportKnots; i++) {
+    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
+    // }
+
+    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep2 = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
+
+    // loco3dModel.insert(loco3dModel.end(), lStep2.begin(), lStep2.end());
 
     boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = loco3dModel.back();
     loco3dModel.pop_back();
@@ -94,7 +109,7 @@ public:
     return boost::make_shared<crocoddyl::ShootingProblem>(x0, loco3dModel,terminal);
   };
 
-  boost::shared_ptr<crocoddyl::ActionModelAbstract> createSwingFootModel(double timeStep, std::vector<pinocchio::FrameIndex> supportFootIds, Eigen::Vector3d comTask, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> swingFootTask) {
+  boost::shared_ptr<crocoddyl::ActionModelAbstract> createSwingFootModel(double timeStep, std::vector<pinocchio::FrameIndex> supportFootIds, Eigen::Vector3d comTask, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> footTask) {
     // Creating a 6D multi-contact model, and then including the supporting
     // foot
     boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, actuation->get_nu());
@@ -128,12 +143,12 @@ public:
                                                                         state, supportFootIds[i], cone, actuation->get_nu()));
       costModel->addCost(model->frames[supportFootIds[i]].name + "_wrenchCone", wrenchCone, 1e1);
     }
-    for (int i=0; i<swingFootTask.size(); i++) {
+    for (int i=0; i<footTask.size(); i++) {
       boost::shared_ptr<crocoddyl::CostModelAbstract> footTrack =
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelFramePlacement>(
-                                                                            state, swingFootTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), swingFootTask[i].second), actuation->get_nu()));
-      costModel->addCost(model->frames[swingFootTask[i].first].name + "_footTrack", footTrack, 1e6);
+                                                                            state, footTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), footTask[i].second), actuation->get_nu()));
+      costModel->addCost(model->frames[footTask[i].first].name + "_footTrack", footTrack, 1e6);
     }
 
     Eigen::VectorXd stateWeights(model->nv*2);
@@ -166,16 +181,18 @@ public:
     return boost::make_shared<crocoddyl::IntegratedActionModelEuler>(dmodel, timeStep);
   };
 
-std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepModels (Eigen::Vector3d& comPos0, std::vector<Eigen::Vector3d>& feetPos0, double stepLength, double stepHeight, int timeStep, int numKnots, std::vector<pinocchio::FrameIndex> supportFootIds, std::vector<pinocchio::FrameIndex> swingFootIds)
+std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepModels (Eigen::Vector3d& comPos0, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>& feetPos0, double stepLength, double stepHeight, int timeStep, int numKnots, std::vector<pinocchio::FrameIndex> supportFootIds, std::vector<pinocchio::FrameIndex> swingFootIds)
   {
     int numLegs = supportFootIds.size() + swingFootIds.size();
     double comPercentage = (double)swingFootIds.size() / (double)numLegs;
 
+    std::cerr << feetPos0[0].first << " " << feetPos0[0].second << std::endl;
+    std::cerr << feetPos0[1].first << " " << feetPos0[1].second << std::endl;
     // Action models for the foot swing
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> footStepModels;
-    std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> swingFootTask;
+    std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> footTask;
     for (int k=0; k<numKnots; k++) {
-      swingFootTask.clear();
+      footTask.clear();
       for (int i=0; i<swingFootIds.size(); i++) {
         double phKnots = (double)numKnots / 2;
         Eigen::Vector3d dp = Eigen::Vector3d::Zero();
@@ -186,19 +203,39 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
         } else {
           dp = Eigen::Vector3d(stepLength * (k+1) / numKnots, 0.0, stepHeight * (1.0 - (k - phKnots) / phKnots));
         }
-        swingFootTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(swingFootIds[i], feetPos0[i] + dp));
+        Eigen::Vector3d feetPos = Eigen::Vector3d::Zero();
+        for (int j=0; j<feetPos0.size(); j++) {
+          if (feetPos0[j].first == swingFootIds[i]) feetPos = feetPos0[j].second;
+        }
+            std::cerr << feetPos << std::endl;
+        footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(swingFootIds[i], feetPos + dp));
+      }
+      for (int i=0; i< supportFootIds.size(); i++) {
+        Eigen::Vector3d feetPos = Eigen::Vector3d::Zero();
+        for (int j=0; j<feetPos0.size(); j++) {
+          if (feetPos0[j].first == supportFootIds[i]) {
+            feetPos = feetPos0[j].second;
+          }
+        }
+        std::cerr << feetPos0[0].first << " " << feetPos0[0].second << std::endl;
+        std::cerr << feetPos0[1].first << " " << feetPos0[1].second << std::endl;
+        std::cerr << feetPos << std::endl;
+        footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(supportFootIds[i], feetPos));
       }
       Eigen::Vector3d comTask = Eigen::Vector3d(stepLength * (k+1) / numKnots, 0.0, 0.0) * comPercentage + comPos0;
-      footStepModels.push_back(this->createSwingFootModel(timeStep, supportFootIds, comTask, swingFootTask));
+      footStepModels.push_back(this->createSwingFootModel(timeStep, supportFootIds, comTask, footTask));
     }
 
     // Action model for the foot switch
-    footStepModels.push_back(this->createFootSwitchModel(supportFootIds, swingFootTask));
+    footStepModels.push_back(this->createFootSwitchModel(supportFootIds, footTask));
 
     // Updating the current foot position for next step
     comPos0 += Eigen::Vector3d(stepLength * comPercentage, 0.0, 0.0);
-    for (int i=0; i<feetPos0.size(); i++) {
-      feetPos0[i] += Eigen::Vector3d(stepLength, 0.0, 0.0);
+
+    for (int i=0; i< swingFootIds.size(); i++) {
+      for (int j=0; j<feetPos0.size(); j++) {
+        if (swingFootIds[i] == feetPos0[j].first) feetPos0[j].second += Eigen::Vector3d(stepLength, 0.0, 0.0);
+      }
     }
 
     return footStepModels;
