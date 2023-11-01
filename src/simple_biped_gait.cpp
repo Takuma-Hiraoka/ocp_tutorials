@@ -32,7 +32,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -69,39 +69,58 @@ public:
       loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
     }
 
-    std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
-    if (firstStep) {
-      rStep = this->createFootStepModels(comRef, footPos0, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
-      firstStep = false;
-    } else {
-      rStep = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+    if (this->num_steps >= 1) {
+      std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
+      if (firstStep) {
+        rStep = this->createFootStepModels(comRef, footPos0, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+        firstStep = false;
+      } else {
+        rStep = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+      }
+      loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
     }
 
-    loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
+    if (this->num_steps >= 2) {
+      for (int i=0;i<supportKnots; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
+    }
 
-    // for (int i=0;i<supportKnots; i++) {
-    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    // }
+    if (this->num_steps >= 3) {
+      std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
-    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
+      loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
+    }
 
-    // loco3dModel.insert(loco3dModel.end(), lStep.begin(), lStep.end());
+    if (this->num_steps >= 4) {
+      for (int i=0;i<supportKnots; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
+    }
 
-    // for (int i=0;i<supportKnots; i++) {
-    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    // }
+    if (this->num_steps >= 5) {
+      std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep2 = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
 
-    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep2 = this->createFootStepModels(comRef, rfPos0s, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
+      loco3dModel.insert(loco3dModel.end(), rStep2.begin(), rStep2.end());
+    }
 
-    // loco3dModel.insert(loco3dModel.end(), rStep2.begin(), rStep2.end());
+    if (this->num_steps >= 6) {
+      for (int i=0;i<supportKnots; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
+    }
 
-    // for (int i=0;i<supportKnots; i++) {
-    //   loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>>()));
-    // }
+    if (this->num_steps >= 7) {
+      std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep2 = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
 
-    // std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> lStep2 = this->createFootStepModels(comRef, lfPos0s, stepLength, stepHeight, timeStep, stepKnots, rf_ids, lf_ids);
+      loco3dModel.insert(loco3dModel.end(), lStep2.begin(), lStep2.end());
+    }
 
-    // loco3dModel.insert(loco3dModel.end(), lStep2.begin(), lStep2.end());
+    if (this->num_steps >= 8) {
+      for (int i=0;i<supportKnots; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
+    }
 
     boost::shared_ptr<crocoddyl::ActionModelAbstract> terminal = loco3dModel.back();
     loco3dModel.pop_back();
@@ -330,6 +349,7 @@ protected:
   double root_w = 500;
   double waist_w = 0.01;
   double state_w = 0.01;
+  int num_steps = 2;
 };
 
 int main(int argc, char** argv)
@@ -349,6 +369,7 @@ int main(int argc, char** argv)
   double state_w = 0.01;
   double root_w = 500;
   double waist_w = 0.01;
+  int num_steps = 2;
   double viewer_ratio = 1.0;
   int num_iter = 100;
   pnh.getParam("stepLength", stepLength);
@@ -361,6 +382,7 @@ int main(int argc, char** argv)
   pnh.getParam("root_w", root_w);
   pnh.getParam("waist_w", waist_w);
   pnh.getParam("state_w", state_w);
+  pnh.getParam("num_steps", num_steps);
   pnh.getParam("viewer_ratio", viewer_ratio);
   pnh.getParam("num_iter", num_iter);
 
@@ -383,7 +405,7 @@ int main(int argc, char** argv)
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
   
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps);
   crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                          x0,
                                                          stepLength,
