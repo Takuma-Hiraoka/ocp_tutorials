@@ -32,7 +32,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double state_w_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), state_w(state_w_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -154,9 +154,9 @@ public:
 
     Eigen::VectorXd stateWeights(model->nv*2);
     stateWeights.head<3>().fill(0.);
-    stateWeights.segment(3,6).fill(pow(500.,2));
-    //    stateWeights.segment(6, 6 + 32).fill(pow(this->state_w, 2));
-    stateWeights.segment(6, model->nv - 6).fill(pow(0.01, 2));
+    stateWeights.segment(3,6).fill(pow(this->root_w,2));
+    stateWeights.segment(6, 6 + 3).fill(pow(this->waist_w, 2));
+    stateWeights.segment(6 + 3, model->nv - 6 - 3).fill(pow(this->state_w, 2));
     stateWeights.segment(model->nv, model->nv).fill(pow(10, 2));
     boost::shared_ptr<crocoddyl::ActivationModelAbstract> stateActivation =
       boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(stateWeights);
@@ -188,8 +188,6 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
     int numLegs = supportFootIds.size() + swingFootIds.size();
     double comPercentage = (double)swingFootIds.size() / (double)numLegs;
 
-    std::cerr << feetPos0[0].first << " " << feetPos0[0].second << std::endl;
-    std::cerr << feetPos0[1].first << " " << feetPos0[1].second << std::endl;
     // Action models for the foot swing
     std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> footStepModels;
     std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> footTask;
@@ -209,7 +207,6 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
         for (int j=0; j<feetPos0.size(); j++) {
           if (feetPos0[j].first == swingFootIds[i]) feetPos = feetPos0[j].second;
         }
-            std::cerr << feetPos << std::endl;
         footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(swingFootIds[i], feetPos + dp));
       }
       for (int i=0; i< supportFootIds.size(); i++) {
@@ -219,9 +216,6 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
             feetPos = feetPos0[j].second;
           }
         }
-        std::cerr << feetPos0[0].first << " " << feetPos0[0].second << std::endl;
-        std::cerr << feetPos0[1].first << " " << feetPos0[1].second << std::endl;
-        std::cerr << feetPos << std::endl;
         footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(supportFootIds[i], feetPos));
       }
       Eigen::Vector3d comTask = Eigen::Vector3d(stepLength * (k+1) / numKnots, 0.0, 0.0) * comPercentage + comPos0;
@@ -229,7 +223,7 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
     }
 
     // Action model for the foot switch
-    footStepModels.push_back(this->createFootSwitchModel(supportFootIds, footTask));
+    footStepModels.push_back(this->createFootSwitchModel(supportFootIds, comPos0 + Eigen::Vector3d(stepLength * comPercentage, 0.0, 0.0), footTask));
 
     // Updating the current foot position for next step
     comPos0 += Eigen::Vector3d(stepLength * comPercentage, 0.0, 0.0);
@@ -243,7 +237,7 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
     return footStepModels;
   };
 
-  boost::shared_ptr<crocoddyl::ActionModelAbstract> createFootSwitchModel(std::vector<pinocchio::FrameIndex> supportFootIds, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> swingFootTask)
+  boost::shared_ptr<crocoddyl::ActionModelAbstract> createFootSwitchModel(std::vector<pinocchio::FrameIndex> supportFootIds, Eigen::Vector3d comTask, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> swingFootTask)
   {
     boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, actuation->get_nu());
     for (int i=0; i< supportFootIds.size(); i++) {
@@ -258,6 +252,14 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
     // Creating the cost model for a contact phase
     boost::shared_ptr<crocoddyl::CostModelSum> costModel =
       boost::make_shared<crocoddyl::CostModelSum>(state, actuation->get_nu());
+    if (comTask != Eigen::Vector3d::Zero()) {
+      boost::shared_ptr<crocoddyl::CostModelAbstract> comTrack =
+      boost::make_shared<crocoddyl::CostModelResidual>(
+          state, boost::make_shared<crocoddyl::ResidualModelCoMPosition>(
+                     state, comTask, actuation->get_nu()));
+      costModel->addCost("comTrack", comTrack, this->com_track_w);
+    }
+
     for (int i=0; i< supportFootIds.size(); i++) {
       crocoddyl::WrenchCone cone(Rsurf, mu, Eigen::Vector2d(0.1, 0.05));
       boost::shared_ptr<crocoddyl::CostModelAbstract> wrenchCone =
@@ -286,9 +288,10 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
 
     Eigen::VectorXd stateWeights(model->nv*2);
     stateWeights.head<3>().fill(0.);
-    stateWeights.segment(3,6).fill(pow(500.,2));
-    stateWeights.segment(6, model->nv - 6).fill(pow(0.01, 2));
-    stateWeights.segment(model->nv, model->nv).fill(pow(10, 2));
+    stateWeights.segment(3,6).fill(pow(this->root_w,2));
+    stateWeights.segment(6, 6 + 3).fill(pow(this->waist_w, 2));
+    stateWeights.segment(6 + 3, model->nv - 6 - 3).fill(pow(this->state_w, 2));
+    //    stateWeights.segment(6, model->nv - 6).fill(pow(this->state_w, 2));
     boost::shared_ptr<crocoddyl::ActivationModelAbstract> stateActivation =
       boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(stateWeights);
     Eigen::VectorXd x0(model->nq + model->nv);
@@ -324,7 +327,9 @@ protected:
   Eigen::Matrix3d Rsurf = Eigen::Matrix3d::Identity();
   double com_track_w = 1e6;
   double feet_track_w = 1e6;
-  double state_w = 1e1;
+  double root_w = 500;
+  double waist_w = 0.01;
+  double state_w = 0.01;
 };
 
 int main(int argc, char** argv)
@@ -341,7 +346,9 @@ int main(int argc, char** argv)
   int supportKnots = 10;
   double com_track_w = 1e6;
   double feet_track_w = 1e6;
-  double state_w = 1e1;
+  double state_w = 0.01;
+  double root_w = 500;
+  double waist_w = 0.01;
   double viewer_ratio = 1.0;
   int num_iter = 100;
   pnh.getParam("stepLength", stepLength);
@@ -351,6 +358,8 @@ int main(int argc, char** argv)
   pnh.getParam("supportKnots", supportKnots);
   pnh.getParam("com_track_w", com_track_w);
   pnh.getParam("feet_track_w", feet_track_w);
+  pnh.getParam("root_w", root_w);
+  pnh.getParam("waist_w", waist_w);
   pnh.getParam("state_w", state_w);
   pnh.getParam("viewer_ratio", viewer_ratio);
   pnh.getParam("num_iter", num_iter);
@@ -363,7 +372,7 @@ int main(int argc, char** argv)
   Eigen::VectorXd q0 = Eigen::VectorXd::Zero(model->nq);
   q0 << 0.0, 0.0, 0.9685,
     0, 0, 0, 1,
-    0.0, 0.0, //0.0, 0.0, 0.0,
+    0.0, 0.0, 0.0, // 0.0, 0.0,
     //    0.0, 0.698132, 0.349066, 0.087266, -1.39626, 0.0, 0.0, -0.349066, // larm
     //    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // lhand
     //    0.0, 0.698132, -0.349066, -0.087266, -1.39626, 0.0, 0.0, -0.349066, // rarm
@@ -374,7 +383,7 @@ int main(int argc, char** argv)
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
   
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, state_w);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w);
   crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                          x0,
                                                          stepLength,
