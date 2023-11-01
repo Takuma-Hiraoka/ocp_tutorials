@@ -5,6 +5,9 @@
     <param name="timeStep" value="0.03"/>
     <param name="stepKnots" value="35"/>
     <param name="supportKnots" value="10"/>
+    <param name="com_track_w" value="1000000"/>
+    <param name="feet_track_w" value="4000000"/>
+    <param name="state_w" value="10"/>
     <param name="viewer_ratio" value="10"/>
     <param name="num_iter" value="1000"/>
   </node>
