@@ -32,7 +32,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_) : model(model_), q0(q0_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double state_w_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), state_w(state_w_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -130,7 +130,7 @@ public:
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelCoMPosition>(
                      state, comTask, actuation->get_nu()));
-      costModel->addCost("comTrack", comTrack, 1e6);
+      costModel->addCost("comTrack", comTrack, this->com_track_w);
     }
     for (int i=0; i< supportFootIds.size(); i++) {
       crocoddyl::WrenchCone cone(Rsurf, mu, Eigen::Vector2d(0.1, 0.05));
@@ -148,12 +148,14 @@ public:
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelFramePlacement>(
                                                                             state, footTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), footTask[i].second), actuation->get_nu()));
-      costModel->addCost(model->frames[footTask[i].first].name + "_footTrack", footTrack, 1e6);
+      costModel->addCost(model->frames[footTask[i].first].name + "_footTrack", footTrack, this->feet_track_w);
+
     }
 
     Eigen::VectorXd stateWeights(model->nv*2);
     stateWeights.head<3>().fill(0.);
     stateWeights.segment(3,6).fill(pow(500.,2));
+    //    stateWeights.segment(6, 6 + 32).fill(pow(this->state_w, 2));
     stateWeights.segment(6, model->nv - 6).fill(pow(0.01, 2));
     stateWeights.segment(model->nv, model->nv).fill(pow(10, 2));
     boost::shared_ptr<crocoddyl::ActivationModelAbstract> stateActivation =
@@ -320,6 +322,9 @@ protected:
   bool firstStep = true;
   double mu = 0.7;
   Eigen::Matrix3d Rsurf = Eigen::Matrix3d::Identity();
+  double com_track_w = 1e6;
+  double feet_track_w = 1e6;
+  double state_w = 1e1;
 };
 
 int main(int argc, char** argv)
@@ -334,6 +339,9 @@ int main(int argc, char** argv)
   double timeStep = 0.03;
   int stepKnots = 35;
   int supportKnots = 10;
+  double com_track_w = 1e6;
+  double feet_track_w = 1e6;
+  double state_w = 1e1;
   double viewer_ratio = 1.0;
   int num_iter = 100;
   pnh.getParam("stepLength", stepLength);
@@ -341,6 +349,9 @@ int main(int argc, char** argv)
   pnh.getParam("timeStep", timeStep);
   pnh.getParam("stepKnots", stepKnots);
   pnh.getParam("supportKnots", supportKnots);
+  pnh.getParam("com_track_w", com_track_w);
+  pnh.getParam("feet_track_w", feet_track_w);
+  pnh.getParam("state_w", state_w);
   pnh.getParam("viewer_ratio", viewer_ratio);
   pnh.getParam("num_iter", num_iter);
 
@@ -352,18 +363,18 @@ int main(int argc, char** argv)
   Eigen::VectorXd q0 = Eigen::VectorXd::Zero(model->nq);
   q0 << 0.0, 0.0, 0.9685,
     0, 0, 0, 1,
-    0.0, 0.0, 0.0, 0.0, 0.0,
-    0.0, 0.698132, 0.349066, 0.087266, -1.39626, 0.0, 0.0, -0.349066, // larm
-    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // lhand
-    0.0, 0.698132, -0.349066, -0.087266, -1.39626, 0.0, 0.0, -0.349066, // rarm
-    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // rhand
+    0.0, 0.0, //0.0, 0.0, 0.0,
+    //    0.0, 0.698132, 0.349066, 0.087266, -1.39626, 0.0, 0.0, -0.349066, // larm
+    //    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // lhand
+    //    0.0, 0.698132, -0.349066, -0.087266, -1.39626, 0.0, 0.0, -0.349066, // rarm
+    //    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // rhand
     0.000128, -0.002474, -0.488869, 1.01524, -0.526374, 0.002474, // lleg
     0.000128, -0.002474, -0.488908, 1.01524, -0.526335, 0.002474; // rleg
   Eigen::VectorXd x0(model->nq + model->nv);
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
   
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, state_w);
   crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                          x0,
                                                          stepLength,
