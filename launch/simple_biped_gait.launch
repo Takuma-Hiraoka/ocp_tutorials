@@ -9,6 +9,7 @@
     <param name="feet_track_w" value="7000000"/>
     <param name="root_w" value="200"/>
     <param name="waist_w" value="150"/>
+    <param name="arm_w" value="100"/>
     <param name="state_w" value="0.0001"/>
     <param name="num_steps" value="2"/>
     <param name="viewer_ratio" value="4"/>
