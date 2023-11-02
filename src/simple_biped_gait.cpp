@@ -32,7 +32,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_, bool firstStep_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_), firstStep(firstStep_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -65,18 +65,19 @@ public:
     std::vector<pinocchio::FrameIndex> rf_lf_ids;
     rf_lf_ids.push_back(rf_id);
     rf_lf_ids.push_back(lf_id);
-    for (int i=0;i<supportKnots; i++) {
-      loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+    if (firstStep) {
+      for (int i=0;i<supportKnots; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
+    } else {
+      for (int i=0;i<supportKnots-1; i++) {
+        loco3dModel.push_back(this->createSwingFootModel(timeStep, rf_lf_ids, comRef, footPos0));
+      }
     }
 
     if (this->num_steps >= 1) {
       std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> rStep;
-      if (firstStep) {
-        rStep = this->createFootStepModels(comRef, footPos0, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
-        firstStep = false;
-      } else {
-        rStep = this->createFootStepModels(comRef, footPos0, stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
-      }
+      rStep = this->createFootStepModels(comRef, footPos0, 0.5 * stepLength, stepHeight, timeStep, stepKnots, lf_ids, rf_ids);
       loco3dModel.insert(loco3dModel.end(), rStep.begin(), rStep.end());
     }
 
@@ -405,7 +406,7 @@ int main(int argc, char** argv)
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
   
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps, true);
   crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                          x0,
                                                          stepLength,
@@ -430,6 +431,35 @@ int main(int argc, char** argv)
   std::cerr << "Gradient norm: " << solver.get_stop() << std::endl;
   std::vector<Eigen::VectorXd> xs = solver.get_xs();
   std::vector<Eigen::VectorXd> us = solver.get_us();
+
+  xs.erase(xs.begin());
+  us.erase(us.begin());
+  xs_init = xs;
+  us_init = us;
+  xs_init[0].head(model->nq) += Eigen::VectorXd::Random(model->nq) * 0.001;
+  xs_init[0].segment(model->nq, model->nq + model->nv) += Eigen::VectorXd::Random(model->nv) * 0.01;
+
+  SimpleBipedGaitProblem gait2(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps, false);
+  crocoddyl::SolverFDDP solver2(gait2.createWalkingProblem(
+                                                         xs_init[0],
+                                                         stepLength,
+                                                         stepHeight,
+                                                         timeStep,
+                                                         stepKnots,
+                                                         supportKnots
+                                                         ));
+  solver2.set_th_stop(1e-7);
+
+  crocoddyl::Timer timer2;
+  std::cerr << "Problem solved: " << solver2.solve(xs_init, us_init, num_iter, false) << std::endl;
+  double time2 = timer2.get_duration();
+  std::cerr << "total calculation time:" << time2 << std::endl;
+  std::cerr << "Number of iterations: " << solver2.get_iter() << std::endl;
+  std::cerr << "time per iterate:" << time2 / solver2.get_iter() << std::endl;
+  std::cerr << "Total cost: " << solver2.get_cost() << std::endl;
+  std::cerr << "Gradient norm: " << solver2.get_stop() << std::endl;
+  xs = solver2.get_xs();
+  us = solver2.get_us();
 
   ros::Rate loop_rate(1.0 / timeStep / viewer_ratio);
   int count = 0;
