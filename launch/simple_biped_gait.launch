@@ -1,14 +1,17 @@
 <launch>
   <node name="simple_biped_gait"   pkg="ocp_tutorials" type="simple_biped_gait" >
     <param name="stepLength" value="0.6"/>
-    <param name="stepHeight" value="0.1"/>
+    <param name="stepHeight" value="0.2"/>
     <param name="timeStep" value="0.03"/>
     <param name="stepKnots" value="35"/>
     <param name="supportKnots" value="10"/>
-    <param name="com_track_w" value="1000000"/>
-    <param name="feet_track_w" value="4000000"/>
-    <param name="state_w" value="10"/>
-    <param name="viewer_ratio" value="10"/>
+    <param name="com_track_w" value="1500000"/>
+    <param name="feet_track_w" value="7000000"/>
+    <param name="root_w" value="200"/>
+    <param name="waist_w" value="150"/>
+    <param name="state_w" value="0.0001"/>
+    <param name="num_steps" value="2"/>
+    <param name="viewer_ratio" value="4"/>
     <param name="num_iter" value="1000"/>
   </node>
 </launch>
