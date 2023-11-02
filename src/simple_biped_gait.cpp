@@ -372,6 +372,7 @@ int main(int argc, char** argv)
   int num_steps = 2;
   double viewer_ratio = 1.0;
   int num_iter = 100;
+  double stop_th = 0.0000001;
   pnh.getParam("stepLength", stepLength);
   pnh.getParam("stepHeight", stepHeight);
   pnh.getParam("timeStep", timeStep);
@@ -385,6 +386,7 @@ int main(int argc, char** argv)
   pnh.getParam("num_steps", num_steps);
   pnh.getParam("viewer_ratio", viewer_ratio);
   pnh.getParam("num_iter", num_iter);
+  pnh.getParam("stop_th", stop_th);
 
   // Load robot
   std::string fileName;
@@ -414,7 +416,7 @@ int main(int argc, char** argv)
                                                          stepKnots,
                                                          supportKnots
                                                          ));
-  solver.set_th_stop(1e-7);
+  solver.set_th_stop(stop_th);
   std::vector<Eigen::VectorXd> xs_init;
   for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
   std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
