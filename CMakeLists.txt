@@ -10,6 +10,7 @@ find_package(catkin REQUIRED COMPONENTS
 
 find_package(pinocchio REQUIRED)
 find_package(crocoddyl REQUIRED)
+find_package(OpenMP REQUIRED COMPONENTS CXX)
 
 include_directories(
   ${catkin_INCLUDE_DIRS})

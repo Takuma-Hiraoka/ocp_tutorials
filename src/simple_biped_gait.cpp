@@ -373,6 +373,7 @@ int main(int argc, char** argv)
   double viewer_ratio = 1.0;
   int num_iter = 100;
   double stop_th = 0.0000001;
+  int num_thread = 8;
   pnh.getParam("stepLength", stepLength);
   pnh.getParam("stepHeight", stepHeight);
   pnh.getParam("timeStep", timeStep);
@@ -387,6 +388,7 @@ int main(int argc, char** argv)
   pnh.getParam("viewer_ratio", viewer_ratio);
   pnh.getParam("num_iter", num_iter);
   pnh.getParam("stop_th", stop_th);
+  pnh.getParam("num_thread", num_thread);
 
   // Load robot
   std::string fileName;
@@ -421,6 +423,9 @@ int main(int argc, char** argv)
   for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
   std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
   xs_init.push_back(x0);
+
+  solver.get_problem()->set_nthreads(num_thread);
+  //  std::cerr << "nthread " << omp_get_max_threads() << std::endl;
 
   crocoddyl::Timer timer;
   std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, num_iter, false) << std::endl;
