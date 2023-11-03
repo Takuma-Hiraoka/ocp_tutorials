@@ -5,6 +5,7 @@
     <param name="timeStep" value="0.03"/>
     <param name="stepKnots" value="35"/>
     <param name="supportKnots" value="10"/>
+    <param name="fwddyn" value="true"/>
     <param name="com_track_w" value="1500000"/>
     <param name="feet_track_w" value="7000000"/>
     <param name="root_w" value="200"/>
@@ -14,6 +15,6 @@
     <param name="viewer_ratio" value="4"/>
     <param name="num_iter" value="1000"/>
     <param name="stop_th" value="0.0000001"/>
-    <param name="num_thread" value="8"/>
+    <param name="num_thread" value="1"/>
   </node>
 </launch>

@@ -7,6 +7,7 @@
 #include <crocoddyl/multibody/states/multibody.hpp>
 #include "crocoddyl/multibody/actuations/floating-base.hpp"
 #include "crocoddyl/multibody/actions/contact-fwddyn.hpp"
+#include "crocoddyl/multibody/actions/contact-invdyn.hpp"
 #include "crocoddyl/multibody/residuals/com-position.hpp"
 #include "crocoddyl/multibody/wrench-cone.hpp"
 #include "crocoddyl/multibody/residuals/contact-wrench-cone.hpp"
@@ -19,9 +20,11 @@
 #include "crocoddyl/multibody/residuals/frame-placement.hpp"
 #include "crocoddyl/multibody/residuals/state.hpp"
 #include "crocoddyl/core/residuals/control.hpp"
+#include "crocoddyl/core/residuals/joint-effort.hpp"
 #include "crocoddyl/core/activations/weighted-quadratic-barrier.hpp"
 #include "crocoddyl/core/integrator/euler.hpp"
 #include "crocoddyl/core/solvers/fddp.hpp"
+#include "crocoddyl/core/solvers/intro.hpp"
 #include "crocoddyl/core/utils/timer.hpp"
 
 #include <ros/ros.h>
@@ -32,7 +35,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, bool fwddyn_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), fwddyn(fwddyn_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -131,24 +134,30 @@ public:
   boost::shared_ptr<crocoddyl::ActionModelAbstract> createSwingFootModel(double timeStep, std::vector<pinocchio::FrameIndex> supportFootIds, Eigen::Vector3d comTask, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> footTask) {
     // Creating a 6D multi-contact model, and then including the supporting
     // foot
-    boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, actuation->get_nu());
+    int nu;
+    if (this->fwddyn) {
+      nu = actuation->get_nu();
+    } else {
+      nu = state->get_nv() + 6 * supportFootIds.size();
+    }
+    boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, nu);
     for (int i=0; i< supportFootIds.size(); i++) {
       boost::shared_ptr<crocoddyl::ContactModelAbstract> supportContactModel =
         boost::make_shared<crocoddyl::ContactModel6D>(
                                                       state, supportFootIds[i], pinocchio::SE3::Identity(),
-                                                      pinocchio::LOCAL_WORLD_ALIGNED, actuation->get_nu(),
+                                                      pinocchio::LOCAL_WORLD_ALIGNED, nu,
                                                       Eigen::Vector2d(0., 50.));
       contactModel->addContact(model->frames[supportFootIds[i]].name + "_contact", supportContactModel);
     }
 
     // Creating the cost model for a contact phase
     boost::shared_ptr<crocoddyl::CostModelSum> costModel =
-      boost::make_shared<crocoddyl::CostModelSum>(state, actuation->get_nu());
+      boost::make_shared<crocoddyl::CostModelSum>(state, nu);
     if (comTask != Eigen::Vector3d::Zero()) {
       boost::shared_ptr<crocoddyl::CostModelAbstract> comTrack =
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelCoMPosition>(
-                     state, comTask, actuation->get_nu()));
+                     state, comTask, nu));
       costModel->addCost("comTrack", comTrack, this->com_track_w);
     }
     for (int i=0; i< supportFootIds.size(); i++) {
@@ -159,14 +168,14 @@ public:
           crocoddyl::ActivationModelQuadraticBarrier>(
                                                       crocoddyl::ActivationBounds(cone.get_lb(), cone.get_ub())),
           boost::make_shared<crocoddyl::ResidualModelContactWrenchCone>(
-                                                                        state, supportFootIds[i], cone, actuation->get_nu()));
+                                                                        state, supportFootIds[i], cone, nu, this->fwddyn));
       costModel->addCost(model->frames[supportFootIds[i]].name + "_wrenchCone", wrenchCone, 1e1);
     }
     for (int i=0; i<footTask.size(); i++) {
       boost::shared_ptr<crocoddyl::CostModelAbstract> footTrack =
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelFramePlacement>(
-                                                                            state, footTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), footTask[i].second), actuation->get_nu()));
+                                                                            state, footTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), footTask[i].second), nu));
       costModel->addCost(model->frames[footTask[i].first].name + "_footTrack", footTrack, this->feet_track_w);
 
     }
@@ -184,20 +193,34 @@ public:
     boost::shared_ptr<crocoddyl::CostModelAbstract> stateReg =
       boost::make_shared<crocoddyl::CostModelResidual>(
                                                        state, stateActivation,
-                                                       boost::make_shared<crocoddyl::ResidualModelState>(state, x0, actuation->get_nu()));
-    boost::shared_ptr<crocoddyl::CostModelAbstract> ctrlReg =
-      boost::make_shared<crocoddyl::CostModelResidual>(
-                                                       state, 
-                                                       boost::make_shared<crocoddyl::ResidualModelControl>(state, actuation->get_nu()));
+                                                       boost::make_shared<crocoddyl::ResidualModelState>(state, x0, nu));
+    boost::shared_ptr<crocoddyl::CostModelAbstract> ctrlReg;
+    if (this->fwddyn) {
+      ctrlReg =
+        boost::make_shared<crocoddyl::CostModelResidual>(
+                                                         state, 
+                                                         boost::make_shared<crocoddyl::ResidualModelControl>(state, nu));
+    } else {
+      ctrlReg =
+        boost::make_shared<crocoddyl::CostModelResidual>(
+                                                         state, 
+                                                         boost::make_shared<crocoddyl::ResidualModelJointEffort>(state, actuation, nu));
+    }
     costModel->addCost("stateReg", stateReg, 1e1);
     costModel->addCost("ctrlReg", ctrlReg, 1e-1);
 
     // Creating the action model for the KKT dynamics with simpletic Euler
     // integration scheme
-    boost::shared_ptr<crocoddyl::DifferentialActionModelContactFwdDynamics>
+    boost::shared_ptr<crocoddyl::DifferentialActionModelAbstract> dmodel;
+    if (this->fwddyn) {
       dmodel = boost::make_shared<
           crocoddyl::DifferentialActionModelContactFwdDynamics>(
                                                                 state, actuation, contactModel, costModel, 0.0, true);
+    } else {
+      dmodel = boost::make_shared<
+          crocoddyl::DifferentialActionModelContactInvDynamics>(
+                                                                state, actuation, contactModel, costModel);
+    }
 
     return boost::make_shared<crocoddyl::IntegratedActionModelEuler>(dmodel, timeStep);
   };
@@ -258,24 +281,31 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
 
   boost::shared_ptr<crocoddyl::ActionModelAbstract> createFootSwitchModel(std::vector<pinocchio::FrameIndex> supportFootIds, Eigen::Vector3d comTask, std::vector<std::pair<pinocchio::FrameIndex, Eigen::Vector3d>> swingFootTask)
   {
-    boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, actuation->get_nu());
+    int nu;
+    if (this->fwddyn) {
+      nu = actuation->get_nu();
+    } else {
+      nu = state->get_nv() + 6 * supportFootIds.size();
+    }
+
+    boost::shared_ptr<crocoddyl::ContactModelMultiple> contactModel = boost::make_shared<crocoddyl::ContactModelMultiple>(state, nu);
     for (int i=0; i< supportFootIds.size(); i++) {
       boost::shared_ptr<crocoddyl::ContactModelAbstract> supportContactModel =
         boost::make_shared<crocoddyl::ContactModel6D>(
                                                       state, supportFootIds[i], pinocchio::SE3::Identity(),
-                                                      pinocchio::LOCAL_WORLD_ALIGNED, actuation->get_nu(),
+                                                      pinocchio::LOCAL_WORLD_ALIGNED, nu,
                                                       Eigen::Vector2d(0., 50.));
       contactModel->addContact(model->frames[supportFootIds[i]].name + "_contact", supportContactModel);
     }
 
     // Creating the cost model for a contact phase
     boost::shared_ptr<crocoddyl::CostModelSum> costModel =
-      boost::make_shared<crocoddyl::CostModelSum>(state, actuation->get_nu());
+      boost::make_shared<crocoddyl::CostModelSum>(state, nu);
     if (comTask != Eigen::Vector3d::Zero()) {
       boost::shared_ptr<crocoddyl::CostModelAbstract> comTrack =
       boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelCoMPosition>(
-                     state, comTask, actuation->get_nu()));
+                     state, comTask, nu));
       costModel->addCost("comTrack", comTrack, this->com_track_w);
     }
 
@@ -287,7 +317,7 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
           crocoddyl::ActivationModelQuadraticBarrier>(
                                                       crocoddyl::ActivationBounds(cone.get_lb(), cone.get_ub())),
           boost::make_shared<crocoddyl::ResidualModelContactWrenchCone>(
-                                                                        state, supportFootIds[i], cone, actuation->get_nu()));
+                                                                        state, supportFootIds[i], cone, nu, this->fwddyn));
       costModel->addCost(model->frames[supportFootIds[i]].name + "_wrenchCone", wrenchCone, 1e1);
     }
 
@@ -295,13 +325,13 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
       boost::shared_ptr<crocoddyl::CostModelAbstract> footTrack =
         boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelFramePlacement>(
-                                                                            state, swingFootTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), swingFootTask[i].second), actuation->get_nu()));
+                                                                            state, swingFootTask[i].first, pinocchio::SE3(Eigen::Matrix3d::Identity(), swingFootTask[i].second), nu));
       costModel->addCost(model->frames[swingFootTask[i].first].name + "_footTrack", footTrack, 1e8);
       boost::shared_ptr<crocoddyl::CostModelAbstract> impulseFootVelCost =
         boost::make_shared<crocoddyl::CostModelResidual>(
           state, boost::make_shared<crocoddyl::ResidualModelFrameVelocity>(
               state, swingFootTask[i].first, pinocchio::Motion::Zero(),
-              pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, actuation->get_nu()));
+              pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED, nu));
           costModel->addCost(model->frames[swingFootTask[i].first].name + "_impulseVel", impulseFootVelCost, 1e6);
     }
 
@@ -318,18 +348,32 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
     boost::shared_ptr<crocoddyl::CostModelAbstract> stateReg =
       boost::make_shared<crocoddyl::CostModelResidual>(
                                                        state, stateActivation,
-                                                       boost::make_shared<crocoddyl::ResidualModelState>(state, x0, actuation->get_nu()));
-    boost::shared_ptr<crocoddyl::CostModelAbstract> ctrlReg =
-      boost::make_shared<crocoddyl::CostModelResidual>(
-                                                       state, 
-                                                       boost::make_shared<crocoddyl::ResidualModelControl>(state, actuation->get_nu()));
-    costModel->addCost("stateReg", stateReg, 1e1);
+                                                       boost::make_shared<crocoddyl::ResidualModelState>(state, x0, nu));
+    boost::shared_ptr<crocoddyl::CostModelAbstract> ctrlReg;
+    if (this->fwddyn) {
+      ctrlReg =
+        boost::make_shared<crocoddyl::CostModelResidual>(
+                                                         state, 
+                                                         boost::make_shared<crocoddyl::ResidualModelControl>(state, nu));
+    } else {
+      ctrlReg =
+        boost::make_shared<crocoddyl::CostModelResidual>(
+                                                         state, 
+                                                         boost::make_shared<crocoddyl::ResidualModelJointEffort>(state, actuation, nu));
+    }    costModel->addCost("stateReg", stateReg, 1e1);
     costModel->addCost("ctrlReg", ctrlReg, 1e-3);
 
-    boost::shared_ptr<crocoddyl::DifferentialActionModelContactFwdDynamics>
+    boost::shared_ptr<crocoddyl::DifferentialActionModelAbstract> dmodel;
+    if (this->fwddyn) {
       dmodel = boost::make_shared<
           crocoddyl::DifferentialActionModelContactFwdDynamics>(
                                                                 state, actuation, contactModel, costModel, 0.0, true);
+    } else {
+      dmodel = boost::make_shared<
+          crocoddyl::DifferentialActionModelContactInvDynamics>(
+                                                                state, actuation, contactModel, costModel);
+    }
+
     return boost::make_shared<crocoddyl::IntegratedActionModelEuler>(dmodel, 0.0);
   };
 
@@ -344,6 +388,7 @@ protected:
   bool firstStep = true;
   double mu = 0.7;
   Eigen::Matrix3d Rsurf = Eigen::Matrix3d::Identity();
+  bool fwddyn = true;
   double com_track_w = 1e6;
   double feet_track_w = 1e6;
   double root_w = 500;
@@ -364,6 +409,7 @@ int main(int argc, char** argv)
   double timeStep = 0.03;
   int stepKnots = 35;
   int supportKnots = 10;
+  bool fwddyn = true;
   double com_track_w = 1e6;
   double feet_track_w = 1e6;
   double state_w = 0.01;
@@ -379,6 +425,7 @@ int main(int argc, char** argv)
   pnh.getParam("timeStep", timeStep);
   pnh.getParam("stepKnots", stepKnots);
   pnh.getParam("supportKnots", supportKnots);
+  pnh.getParam("fwddyn", fwddyn);
   pnh.getParam("com_track_w", com_track_w);
   pnh.getParam("feet_track_w", feet_track_w);
   pnh.getParam("root_w", root_w);
@@ -407,36 +454,69 @@ int main(int argc, char** argv)
     0.000128, -0.002474, -0.488908, 1.01524, -0.526335, 0.002474; // rleg
   Eigen::VectorXd x0(model->nq + model->nv);
   x0 << q0, Eigen::VectorXd::Zero(model->nv);
-  
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps);
-  crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
-                                                         x0,
-                                                         stepLength,
-                                                         stepHeight,
-                                                         timeStep,
-                                                         stepKnots,
-                                                         supportKnots
-                                                         ));
-  solver.set_th_stop(stop_th);
-  std::vector<Eigen::VectorXd> xs_init;
-  for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
-  std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
-  xs_init.push_back(x0);
+  std::vector<Eigen::VectorXd> xs;
+  std::vector<Eigen::VectorXd> us;
 
-  solver.get_problem()->set_nthreads(num_thread);
-  //  std::cerr << "nthread " << omp_get_max_threads() << std::endl;
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, fwddyn, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps);
+  if (fwddyn) {
+    crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
+                                                            x0,
+                                                            stepLength,
+                                                            stepHeight,
+                                                            timeStep,
+                                                            stepKnots,
+                                                            supportKnots
+                                                            ));
+    solver.set_th_stop(stop_th);
+    std::vector<Eigen::VectorXd> xs_init;
+    for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
+    std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
+    xs_init.push_back(x0);
 
-  crocoddyl::Timer timer;
-  std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, num_iter, false) << std::endl;
-  double time = timer.get_duration();
-  std::cerr << "total calculation time:" << time << std::endl;
-  std::cerr << "Number of iterations: " << solver.get_iter() << std::endl;
-  std::cerr << "time per iterate:" << time / solver.get_iter() << std::endl;
-  std::cerr << "Total cost: " << solver.get_cost() << std::endl;
-  std::cerr << "Gradient norm: " << solver.get_stop() << std::endl;
-  std::vector<Eigen::VectorXd> xs = solver.get_xs();
-  std::vector<Eigen::VectorXd> us = solver.get_us();
+    solver.get_problem()->set_nthreads(num_thread);
+    //  std::cerr << "nthread " << omp_get_max_threads() << std::endl;
+
+    crocoddyl::Timer timer;
+    std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, num_iter, false) << std::endl;
+    double time = timer.get_duration();
+    std::cerr << "total calculation time:" << time << std::endl;
+    std::cerr << "Number of iterations: " << solver.get_iter() << std::endl;
+    std::cerr << "time per iterate:" << time / solver.get_iter() << std::endl;
+    std::cerr << "Total cost: " << solver.get_cost() << std::endl;
+    std::cerr << "Gradient norm: " << solver.get_stop() << std::endl;
+    xs = solver.get_xs();
+    us = solver.get_us();
+
+  } else {
+    crocoddyl::SolverIntro solver(gait.createWalkingProblem(
+                                                            x0,
+                                                            stepLength,
+                                                            stepHeight,
+                                                            timeStep,
+                                                            stepKnots,
+                                                            supportKnots
+                                                            ));
+      solver.set_th_stop(stop_th);
+      std::vector<Eigen::VectorXd> xs_init;
+      for (int i=0; i<solver.get_problem()->get_T(); i++) xs_init.push_back(x0);
+      std::vector<Eigen::VectorXd> us_init = solver.get_problem()->quasiStatic_xs(xs_init);
+      xs_init.push_back(x0);
+
+      solver.get_problem()->set_nthreads(num_thread);
+      //  std::cerr << "nthread " << omp_get_max_threads() << std::endl;
+
+      crocoddyl::Timer timer;
+      std::cerr << "Problem solved: " << solver.solve(xs_init, us_init, num_iter, false) << std::endl;
+      double time = timer.get_duration();
+      std::cerr << "total calculation time:" << time << std::endl;
+      std::cerr << "Number of iterations: " << solver.get_iter() << std::endl;
+      std::cerr << "time per iterate:" << time / solver.get_iter() << std::endl;
+      std::cerr << "Total cost: " << solver.get_cost() << std::endl;
+      std::cerr << "Gradient norm: " << solver.get_stop() << std::endl;
+      xs = solver.get_xs();
+      us = solver.get_us();
+  }
 
   ros::Rate loop_rate(1.0 / timeStep / viewer_ratio);
   int count = 0;
