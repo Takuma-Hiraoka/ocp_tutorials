@@ -35,7 +35,7 @@
 
 class SimpleBipedGaitProblem {
 public:
-  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, bool fwddyn_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), fwddyn(fwddyn_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), state_w(state_w_), num_steps(num_steps_){
+  SimpleBipedGaitProblem(boost::shared_ptr<pinocchio::Model> model_, std::string rightFoot, std::string leftFoot, Eigen::VectorXd q0_, bool fwddyn_, double com_track_w_, double feet_track_w_, double root_w_, double waist_w_, double arm_w_, double state_w_, int num_steps_) : model(model_), q0(q0_), fwddyn(fwddyn_), com_track_w(com_track_w_), feet_track_w(feet_track_w_), root_w(root_w_), waist_w(waist_w_), arm_w(arm_w_), state_w(state_w_), num_steps(num_steps_){
     pinocchio::Data data_(*model);
     data = data_;
     state = boost::make_shared<crocoddyl::StateMultibody>(model);
@@ -182,9 +182,10 @@ public:
 
     Eigen::VectorXd stateWeights(model->nv*2);
     stateWeights.head<3>().fill(0.);
-    stateWeights.segment(3,6).fill(pow(this->root_w,2));
-    stateWeights.segment(6, 6 + 3).fill(pow(this->waist_w, 2));
-    stateWeights.segment(6 + 3, model->nv - 6 - 3).fill(pow(this->state_w, 2));
+    stateWeights.segment(3,3).fill(pow(this->root_w,2));
+    stateWeights.segment(6, 3).fill(pow(this->waist_w, 2));
+    stateWeights.segment(6 + 3, 2 + 16 + 12).fill(pow(this->arm_w, 2));
+    stateWeights.segment(6 + 3 + 2 + 16 + 12, model->nv - 6 - 3 - 2 - 16 - 12).fill(pow(this->state_w, 2));
     stateWeights.segment(model->nv, model->nv).fill(pow(10, 2));
     boost::shared_ptr<crocoddyl::ActivationModelAbstract> stateActivation =
       boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(stateWeights);
@@ -337,9 +338,10 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
 
     Eigen::VectorXd stateWeights(model->nv*2);
     stateWeights.head<3>().fill(0.);
-    stateWeights.segment(3,6).fill(pow(this->root_w,2));
-    stateWeights.segment(6, 6 + 3).fill(pow(this->waist_w, 2));
-    stateWeights.segment(6 + 3, model->nv - 6 - 3).fill(pow(this->state_w, 2));
+    stateWeights.segment(3,3).fill(pow(this->root_w,2));
+    stateWeights.segment(6, 3).fill(pow(this->waist_w, 2));
+    stateWeights.segment(6 + 3, 2 + 16 + 12).fill(pow(this->arm_w, 2));
+    stateWeights.segment(6 + 3 + 2 + 16 + 12, model->nv - 6 - 3 - 2 - 16 - 12).fill(pow(this->state_w, 2));
     //    stateWeights.segment(6, model->nv - 6).fill(pow(this->state_w, 2));
     boost::shared_ptr<crocoddyl::ActivationModelAbstract> stateActivation =
       boost::make_shared<crocoddyl::ActivationModelWeightedQuad>(stateWeights);
@@ -393,6 +395,7 @@ protected:
   double feet_track_w = 1e6;
   double root_w = 500;
   double waist_w = 0.01;
+  double arm_w = 0.01;
   double state_w = 0.01;
   int num_steps = 2;
 };
@@ -415,6 +418,7 @@ int main(int argc, char** argv)
   double state_w = 0.01;
   double root_w = 500;
   double waist_w = 0.01;
+  double arm_w = 0.01;
   int num_steps = 2;
   double viewer_ratio = 1.0;
   int num_iter = 100;
@@ -430,6 +434,7 @@ int main(int argc, char** argv)
   pnh.getParam("feet_track_w", feet_track_w);
   pnh.getParam("root_w", root_w);
   pnh.getParam("waist_w", waist_w);
+  pnh.getParam("arm_w", arm_w);
   pnh.getParam("state_w", state_w);
   pnh.getParam("num_steps", num_steps);
   pnh.getParam("viewer_ratio", viewer_ratio);
@@ -445,11 +450,11 @@ int main(int argc, char** argv)
   Eigen::VectorXd q0 = Eigen::VectorXd::Zero(model->nq);
   q0 << 0.0, 0.0, 0.9685,
     0, 0, 0, 1,
-    0.0, 0.0, 0.0, // 0.0, 0.0,
-    //    0.0, 0.698132, 0.349066, 0.087266, -1.39626, 0.0, 0.0, -0.349066, // larm
-    //    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // lhand
-    //    0.0, 0.698132, -0.349066, -0.087266, -1.39626, 0.0, 0.0, -0.349066, // rarm
-    //    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // rhand
+    0.0, 0.0, 0.0, 0.0, 0.0,
+    0.0, 0.698132, 0.349066, 0.087266, -1.39626, 0.0, 0.0, -0.349066, // larm
+    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // lhand
+    0.0, 0.698132, -0.349066, -0.087266, -1.39626, 0.0, 0.0, -0.349066, // rarm
+    0.000000,  0.000000,  0.000000,  0.000000,  0.000000, 0.00000, // rhand
     0.000128, -0.002474, -0.488869, 1.01524, -0.526374, 0.002474, // lleg
     0.000128, -0.002474, -0.488908, 1.01524, -0.526335, 0.002474; // rleg
   Eigen::VectorXd x0(model->nq + model->nv);
@@ -458,7 +463,7 @@ int main(int argc, char** argv)
   std::vector<Eigen::VectorXd> xs;
   std::vector<Eigen::VectorXd> us;
 
-  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, fwddyn, com_track_w, feet_track_w, root_w, waist_w, state_w, num_steps);
+  SimpleBipedGaitProblem gait(model, "RLEG_LINK5", "LLEG_LINK5", q0, fwddyn, com_track_w, feet_track_w, root_w, waist_w, arm_w, state_w, num_steps);
   if (fwddyn) {
     crocoddyl::SolverFDDP solver(gait.createWalkingProblem(
                                                             x0,
