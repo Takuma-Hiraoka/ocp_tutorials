@@ -251,15 +251,6 @@ std::vector<boost::shared_ptr<crocoddyl::ActionModelAbstract>> createFootStepMod
         }
         footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(swingFootIds[i], feetPos + dp));
       }
-      for (int i=0; i< supportFootIds.size(); i++) {
-        Eigen::Vector3d feetPos = Eigen::Vector3d::Zero();
-        for (int j=0; j<feetPos0.size(); j++) {
-          if (feetPos0[j].first == supportFootIds[i]) {
-            feetPos = feetPos0[j].second;
-          }
-        }
-        footTask.push_back(std::pair<pinocchio::FrameIndex, Eigen::Vector3d>(supportFootIds[i], feetPos));
-      }
       Eigen::Vector3d comTask = Eigen::Vector3d(stepLength * (k+1) / numKnots, 0.0, 0.0) * comPercentage + comPos0;
       footStepModels.push_back(this->createSwingFootModel(timeStep, supportFootIds, comTask, footTask));
     }
