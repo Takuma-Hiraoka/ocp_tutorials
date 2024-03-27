@@ -14,7 +14,7 @@
     <param name="num_steps" value="2"/>
     <param name="viewer_ratio" value="4"/>
     <param name="num_iter" value="100"/>
-    <param name="stop_th" value="0.0000001"/>
+    <param name="stop_th" value="10"/>
     <param name="num_thread" value="6"/>
   </node>
 </launch>

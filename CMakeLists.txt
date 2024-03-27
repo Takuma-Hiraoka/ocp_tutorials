@@ -27,6 +27,7 @@ add_executable(viewer_test src/viewer_test.cpp)
 add_executable(whole_body_manipulation src/whole_body_manipulation.cpp)
 add_executable(simple_biped_gait src/simple_biped_gait.cpp)
 add_executable(robotoc_gait src/robotoc_gait.cpp)
+add_executable(robotoc_jump src/robotoc_jump.cpp)
 
 target_link_libraries(viewer_test
   ${catkin_LIBRARIES}
@@ -40,5 +41,8 @@ target_link_libraries(simple_biped_gait
   pinocchio::pinocchio
   crocoddyl::crocoddyl)
 target_link_libraries(robotoc_gait
+  ${catkin_LIBRARIES}
+  robotoc::robotoc)
+target_link_libraries(robotoc_jump
   ${catkin_LIBRARIES}
   robotoc::robotoc)

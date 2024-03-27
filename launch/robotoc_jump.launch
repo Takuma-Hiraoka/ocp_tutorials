@@ -1,0 +1,16 @@
+<launch>
+  <node name="robotoc_jump"   pkg="ocp_tutorials" type="robotoc_jump" >
+    <param name="jumpLength" value="0.5"/>
+    <param name="timeStep" value="0.03"/>
+    <param name="flyingKnots" value="40"/>
+    <param name="groundKnots" value="35"/>
+    <param name="root_w" value="100"/>
+    <param name="waist_w" value="0.01"/>
+    <param name="arm_w" value="0.001"/>
+    <param name="state_w" value="0.0001"/>
+    <param name="viewer_ratio" value="4"/>
+    <param name="num_iter" value="100"/>
+    <param name="stop_th" value="0.001"/>
+    <param name="num_thread" value="6"/>
+  </node>
+</launch>
