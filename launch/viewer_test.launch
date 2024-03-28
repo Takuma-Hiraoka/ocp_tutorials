@@ -1,5 +1,5 @@
 <launch>
-<!--  <arg name="URDF_FILE" value="$(find msl_hand_controller)/models/JAXON_RED_SENSORS_tmp.urdf"/> -->
+<!--  <arg name="URDF_FILE" value="$(find msl_hand_controller)/models/JAXON_RED_SENSORS.urdf"/> -->
   <arg name="URDF_FILE" value="$(find hrpsys_ros_bridge_tutorials)/models/JAXON_BLUE_SENSORS.urdf"/>
   <param name="robot_description" textfile="$(arg URDF_FILE)" />
   <param name="robot_model_file" value="$(arg URDF_FILE)" />
