@@ -26,6 +26,7 @@ catkin_package(
 add_executable(viewer_test src/viewer_test.cpp)
 add_executable(whole_body_manipulation src/whole_body_manipulation.cpp)
 add_executable(simple_biped_gait src/simple_biped_gait.cpp)
+add_executable(crocoddyl_tennis src/crocoddyl_tennis.cpp)
 add_executable(robotoc_gait src/robotoc_gait.cpp)
 add_executable(robotoc_jump src/robotoc_jump.cpp)
 
@@ -37,6 +38,10 @@ target_link_libraries(whole_body_manipulation
   pinocchio::pinocchio
   crocoddyl::crocoddyl)
 target_link_libraries(simple_biped_gait
+  ${catkin_LIBRARIES}
+  pinocchio::pinocchio
+  crocoddyl::crocoddyl)
+target_link_libraries(crocoddyl_tennis
   ${catkin_LIBRARIES}
   pinocchio::pinocchio
   crocoddyl::crocoddyl)

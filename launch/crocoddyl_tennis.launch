@@ -1,0 +1,11 @@
+<launch>
+  <node name="crocoddyl_tennis"   pkg="ocp_tutorials" type="crocoddyl_tennis" >
+    <param name="timeStep" value="0.01"/>
+    <param name="totalKnots" value="150"/>
+    <param name="impactKnots" value="90"/>
+    <param name="viewer_ratio" value="10"/>
+    <param name="num_iter" value="100"/>
+    <param name="stop_th" value="0.0000001"/>
+    <param name="num_thread" value="6"/>
+  </node>
+</launch>
